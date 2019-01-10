@@ -1,4 +1,4 @@
-package garbagecollectors.com.unipool;
+package garbagecollectors.com.unipool.dialog;
 
 /**
  * Created by SIMRAN on 22-11-2017.
@@ -13,14 +13,14 @@ import android.widget.EditText;
 
 import java.util.Calendar;
 
-import garbagecollectors.com.unipool.activities.NewEntryActivity;
-
 public class DatePickerFragment extends DialogFragment implements DatePickerDialog.OnDateSetListener
 {
     String stringOfDate;
 
     public DatePickerFragment()
     {}
+
+    static EditText setDate;
 
     int year_now,month_now,day_now;
     @Override
@@ -47,17 +47,21 @@ public class DatePickerFragment extends DialogFragment implements DatePickerDial
     public void onDateSet(DatePicker view, int year, int month, int day)
     {
         //Do something with the date chosen by the user
-        EditText setDate = getActivity().findViewById(R.id.setDateEditText);
         if((year==year_now && month==month_now && day>=day_now)|| (year==year_now && month>month_now) ||
                 (year>year_now))
         {
             stringOfDate = day + "/" + (++month) + "/" + year;
 
             setDate.setText(stringOfDate);
-            NewEntryActivity.date=stringOfDate;
+            NewEntryDialog.date=stringOfDate;
         }
         else
             setDate.setText("Invalid Date");
 
+    }
+
+    public static void setSetDate(EditText setDate)
+    {
+        DatePickerFragment.setDate = setDate;
     }
 }

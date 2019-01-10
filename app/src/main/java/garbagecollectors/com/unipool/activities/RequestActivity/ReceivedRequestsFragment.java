@@ -16,12 +16,13 @@ import com.google.android.gms.tasks.Task;
 import java.util.ArrayList;
 import java.util.HashMap;
 
-import garbagecollectors.com.unipool.Models.TripEntry;
-import garbagecollectors.com.unipool.Models.User;
 import garbagecollectors.com.unipool.R;
-import garbagecollectors.com.unipool.UtilityMethods;
 import garbagecollectors.com.unipool.activities.HomeActivity;
 import garbagecollectors.com.unipool.adapters.ReceivedRequestsTEA;
+import garbagecollectors.com.unipool.application.Globals;
+import garbagecollectors.com.unipool.application.UtilityMethods;
+import garbagecollectors.com.unipool.models.TripEntry;
+import garbagecollectors.com.unipool.models.User;
 
 public class ReceivedRequestsFragment extends Fragment
 {
@@ -40,6 +41,16 @@ public class ReceivedRequestsFragment extends Fragment
 
     public ReceivedRequestsFragment()
     {  }
+
+	@Override
+	public void setUserVisibleHint(boolean isVisibleToUser) {
+		super.setUserVisibleHint(isVisibleToUser);
+
+		if (isVisibleToUser) {
+			Globals.OPEN_ACTIVITY = "REQUESTS";
+            Log.d("Open", Globals.OPEN_ACTIVITY);
+		}
+	}
 
     @Override
     public void onCreate(Bundle savedInstanceState)

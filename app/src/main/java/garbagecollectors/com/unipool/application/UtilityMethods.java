@@ -1,4 +1,4 @@
-package garbagecollectors.com.unipool;
+package garbagecollectors.com.unipool.application;
 
 import android.content.Context;
 import android.util.DisplayMetrics;
@@ -7,6 +7,7 @@ import android.view.View;
 
 import com.google.android.gms.tasks.Task;
 import com.google.android.gms.tasks.TaskCompletionSource;
+import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
@@ -25,13 +26,13 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 
-import garbagecollectors.com.unipool.Models.Message;
-import garbagecollectors.com.unipool.Models.PairUp;
-import garbagecollectors.com.unipool.Models.TripEntry;
-import garbagecollectors.com.unipool.Models.User;
 import garbagecollectors.com.unipool.activities.BaseActivity;
 import garbagecollectors.com.unipool.adapters.TripEntryAdapter;
 import garbagecollectors.com.unipool.adapters.UserAdapter;
+import garbagecollectors.com.unipool.models.Message;
+import garbagecollectors.com.unipool.models.PairUp;
+import garbagecollectors.com.unipool.models.TripEntry;
+import garbagecollectors.com.unipool.models.User;
 
 public class UtilityMethods
 {
@@ -40,7 +41,7 @@ public class UtilityMethods
         TaskCompletionSource<DataSnapshot> userSource = new TaskCompletionSource<>();
         Task userTask = userSource.getTask();
 
-        DatabaseReference userDatabaseReference = FirebaseDatabase.getInstance().getReference(userReference);
+        DatabaseReference userDatabaseReference = FirebaseDatabase.getInstance().getReference(Globals.UNI + userReference);
 
         userDatabaseReference.addListenerForSingleValueEvent(new ValueEventListener()
         {
@@ -89,14 +90,14 @@ public class UtilityMethods
         return flag;
     }
 
-    public static boolean putInMap(HashMap<String, ArrayList<String>> map, String keyId, String valueId)
+    public static boolean putInMap(HashMap<String, ArrayList<String>> requestsReceived, String keyId, String valueId)
     {
         boolean flag = false, flag2 = false;
 
-        if(map == null)
-            map = new HashMap<>();
+        if(requestsReceived == null)
+            requestsReceived = new HashMap<>();
 
-        for (Map.Entry<String, ArrayList<String>> entry : map.entrySet())
+        for (Map.Entry<String, ArrayList<String>> entry : requestsReceived.entrySet())
         {
             if (entry.getKey().equals(keyId))
             {
@@ -123,13 +124,13 @@ public class UtilityMethods
             ArrayList<String> IdList = new ArrayList<>();
             IdList.add(valueId);
 
-            map.put(keyId, IdList);
+            requestsReceived.put(keyId, IdList);
         }
 
         return flag;
     }
 
-    public static void updateTripList(ArrayList<TripEntry> tripEntryList, TripEntry tripEntry)
+    public static void updateTripList(ArrayList<TripEntry> tripEntryList, TripEntry tripEntry, boolean addToEnd)
     {
         Iterator<TripEntry> iterator = tripEntryList.iterator();
 
@@ -137,14 +138,22 @@ public class UtilityMethods
         {
             TripEntry tripEntryFromList = iterator.next();
 
-            if(tripEntryFromList.getEntry_id().equals(tripEntry.getEntry_id()))
+            try
             {
-                iterator.remove();
-                break;
+                if(tripEntryFromList.getEntry_id().equals(tripEntry.getEntry_id()))
+                {
+                    iterator.remove();
+                    break;
+                }
+            } catch (NullPointerException npe)
+            {
+                npe.printStackTrace();
             }
         }
 
-        tripEntryList.add(0, tripEntry);
+        if(addToEnd)
+            tripEntryList.add(tripEntryList.size(), tripEntry);
+        else tripEntryList.add(0, tripEntry);
     }
 
     public static Task populateReceivedRequestsList(ArrayList<TripEntry> receivedRequestsList, HashMap<String, ArrayList<String>> receivedRequestsMap, ArrayList<TripEntry> tripEntries)
@@ -226,6 +235,9 @@ public class UtilityMethods
 
     public static void fillTripEntryHolder(TripEntryAdapter.MyHolder holder, TripEntry tripEntry)
     {
+    	holder.cardArrow.setVisibility(View.GONE);
+	    holder.messageCard.setVisibility(View.GONE);
+
         holder.date.setText(tripEntry.getDate());
         holder.name_user.setText(sanitizeName(tripEntry.getName()));
         holder.travel_time.setText(tripEntry.getTime());
@@ -312,13 +324,13 @@ public class UtilityMethods
         return time;
     }
 
-    public static Task populateChatMap(DataSnapshot userData)
+    public static Task populateChatMap(DataSnapshot pairUpSnapshot)
     {
         final String[] userId = new String[1];
 
         ArrayList<PairUp> pairUps = new ArrayList<>();
 
-        for(DataSnapshot dataSnapshot: userData.child("pairUps").getChildren())
+        for(DataSnapshot dataSnapshot: pairUpSnapshot.getChildren())
             pairUps.add(dataSnapshot.getValue(PairUp.class));
 
         Task task = accessUserDatabase("users");
@@ -422,8 +434,8 @@ public class UtilityMethods
 
     public static void putMessageOnDB(Message message, User chatUser, User user)
     {
-        DatabaseReference chatUserMessageReference = FirebaseDatabase.getInstance().getReference("messages/" + chatUser.getUserId());
-        DatabaseReference userMessageReference = FirebaseDatabase.getInstance().getReference("messages/" + user.getUserId());
+        DatabaseReference chatUserMessageReference = FirebaseDatabase.getInstance().getReference(Globals.UNI + "messages/" + chatUser.getUserId());
+        DatabaseReference userMessageReference = FirebaseDatabase.getInstance().getReference(Globals.UNI + "messages/" + user.getUserId());
 
         String messageId = userMessageReference.push().getKey();
         message.setMessageId(messageId);
@@ -496,6 +508,9 @@ public class UtilityMethods
 
     public static String sanitizeName(String name)
     {
+        if(name == null)
+            return "";
+
         final String ACTIONABLE_DELIMITERS = " '-/"; // these cause the character following
         // to be capitalized
 
@@ -514,5 +529,25 @@ public class UtilityMethods
         }
 
         return sb.toString();
+    }
+
+    public static void storeUserLocally(FirebaseUser user, Context context)
+    {
+        LocalStorageHelper.storeLocally(Globals.USER_SP_FILE, Globals.USER_ID_KEY, user.getUid(), context);
+        LocalStorageHelper.storeLocally(Globals.USER_SP_FILE, Globals.USER_NAME_KEY, user.getDisplayName(), context);
+        LocalStorageHelper.storeLocally(Globals.USER_SP_FILE, Globals.USER_EMAIL_KEY, user.getEmail(), context);
+        LocalStorageHelper.storeLocally(Globals.USER_SP_FILE, Globals.USER_PHONE_KEY, user.getPhoneNumber(), context);
+        LocalStorageHelper.storeLocally(Globals.USER_SP_FILE, Globals.USER_PHOTO_URL_KEY, user.getPhotoUrl(), context);
+
+    }
+
+    public static void fillGlobalVariables(Context context)
+    {
+        Globals.USER_ID = (String)LocalStorageHelper.loadFromLocal(Globals.USER_ID_KEY, context, String.class);
+        Globals.USER_NAME = (String)LocalStorageHelper.loadFromLocal(Globals.USER_NAME_KEY, context, String.class);
+        Globals.USER_EMAIL = (String)LocalStorageHelper.loadFromLocal(Globals.USER_EMAIL_KEY, context, String.class);
+        Globals.USER_PHONE = (String)LocalStorageHelper.loadFromLocal(Globals.USER_PHONE_KEY, context, String.class);
+        Globals.USER_PHOTO_URL = (String)LocalStorageHelper.loadFromLocal(Globals.USER_PHOTO_URL_KEY, context, String.class);
+        Globals.USER_TOKEN = (String)LocalStorageHelper.loadFromLocal(Globals.USER_TOKEN_KEY, context, String.class);
     }
 }

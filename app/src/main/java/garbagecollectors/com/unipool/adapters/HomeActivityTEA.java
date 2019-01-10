@@ -4,10 +4,12 @@ package garbagecollectors.com.unipool.adapters;
 
 import android.app.ProgressDialog;
 import android.content.Context;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Build;
+import android.provider.ContactsContract;
 import android.support.annotation.RequiresApi;
 import android.support.v7.app.AlertDialog;
-import android.transition.TransitionManager;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -26,16 +28,16 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
-import garbagecollectors.com.unipool.Models.TripEntry;
-import garbagecollectors.com.unipool.Models.User;
 import garbagecollectors.com.unipool.R;
-import garbagecollectors.com.unipool.UtilityMethods;
 import garbagecollectors.com.unipool.activities.BaseActivity;
-import garbagecollectors.com.unipool.activities.HomeActivity;
+import garbagecollectors.com.unipool.application.Globals;
+import garbagecollectors.com.unipool.application.UtilityMethods;
+import garbagecollectors.com.unipool.models.TripEntry;
+import garbagecollectors.com.unipool.models.User;
 
-import static garbagecollectors.com.unipool.UtilityMethods.accessUserDatabase;
-import static garbagecollectors.com.unipool.UtilityMethods.addRequestInList;
-import static garbagecollectors.com.unipool.UtilityMethods.putInMap;
+import static garbagecollectors.com.unipool.application.UtilityMethods.accessUserDatabase;
+import static garbagecollectors.com.unipool.application.UtilityMethods.addRequestInList;
+import static garbagecollectors.com.unipool.application.UtilityMethods.putInMap;
 
 public class HomeActivityTEA extends TripEntryAdapter
 {
@@ -49,8 +51,6 @@ public class HomeActivityTEA extends TripEntryAdapter
     private AlertDialog.Builder alertDialogBuilder;
 
     private ProgressDialog progressDialog;
-
-    private int isExpanded = -1;
 
     public HomeActivityTEA(List<TripEntry> list, Context context)
     {
@@ -78,41 +78,96 @@ public class HomeActivityTEA extends TripEntryAdapter
     @Override
     public void onBindViewHolder(MyHolder holder, int position)
     {
-        UtilityMethods.fillTripEntryHolder(holder, list.get(position));
-
-        if(list.get(position).getMessage() != null)
+        try
         {
-            final boolean isExpanded = position== this.isExpanded;
-            holder.messageCard.setVisibility(isExpanded?View.VISIBLE:View.GONE);
-            holder.itemView.setActivated(isExpanded);
+            UtilityMethods.fillTripEntryHolder(holder, list.get(position));
+
             holder.cardArrow.setOnClickListener(v -> {
-                if (!isExpanded)
-                    holder.cardArrow.setImageResource(R.drawable.ic_arrow_drop_down_circle_24px);
-                else
+                if (holder.tripEntryExpand.isExpanded())
+                {
+                    holder.tripEntryExpand.collapse();
                     holder.cardArrow.setImageResource(R.drawable.ic_arrow_left_24px);
-                this.isExpanded = isExpanded ? -1:position;
-                TransitionManager.beginDelayedTransition(HomeActivity.getRecycle());
-                notifyDataSetChanged();
+                }
+                else
+                {
+                    holder.tripEntryExpand.expand();
+                    holder.cardArrow.setImageResource(R.drawable.ic_arrow_drop_down_circle_24px);
+                }
             });
+
+            holder.requestButton.setOnClickListener(view -> onRequestClick(view, position));
+
+            holder.itemView.setOnLongClickListener(v ->
+            {
+                if(Globals.USER_EMAIL.contains(context.getString(R.string.dev_mail)))  //God mode
+                    deleteEntry(v, position);
+                else onRequestClick(v, position);
+                return true;
+            });
+        } catch (Exception e)
+        {
+            //Maybe cause of missing info
+            e.printStackTrace();
         }
 
-        holder.requestButton.setOnClickListener(view ->
-                sendRequest(view, position));
+    }
 
-        holder.itemView.setOnLongClickListener(v ->
-        {
-            if(list.get(position).getUser_id().equals(BaseActivity.getFinalCurrentUser().getUserId()))
-            {
-                deleteEntry(v, position);
-            }
+    private void onRequestClick(View view, int position)
+    {
+        TripEntry tripEntry = list.get(position);
 
+        if (tripEntry.isNotFromApp())
+            if(tripEntry.getPhone() != null && !tripEntry.getPhone().isEmpty())
+                addToContacts(tripEntry);
             else
-                sendRequest(v, position);
+                writeMail(tripEntry);
+        else
+        {
+            if(tripEntry.getUser_id().equals(BaseActivity.getFinalCurrentUser().getUserId()))
+                deleteEntry(view, position);
+            else sendRequest(view, position);
+        }
+    }
 
-            return true;
+    private void writeMail(TripEntry tripEntry)
+    {
+        alertDialogBuilder.setMessage("This person isn't on the app :(  \nDo you want to mail them instead?");
+
+        alertDialogBuilder.setPositiveButton("YES", (dialog, which) ->
+        {
+            // Open email intent
+            Intent emailIntent = new Intent(Intent.ACTION_SENDTO, Uri.fromParts(
+                    "mailto",tripEntry.getEmail(), null));
+            context.startActivity(Intent.createChooser(emailIntent, "Send email..."));
         });
 
+        alertDialogBuilder.setNegativeButton("NO", (dialog, which) -> dialog.dismiss());
 
+        AlertDialog alert = alertDialogBuilder.create();
+        alert.show();
+    }
+
+    private void addToContacts(TripEntry tripEntry)
+    {
+        alertDialogBuilder.setMessage("This person isn't on the app :(\nDo you want to add them to your contacts?");
+
+        alertDialogBuilder.setPositiveButton("YES", (dialog, which) ->
+        {
+            //open contacts intent with pre-filled stuff
+
+            Intent intent = new Intent(Intent.ACTION_INSERT);
+            intent.setType(ContactsContract.Contacts.CONTENT_TYPE);
+
+            intent.putExtra(ContactsContract.Intents.Insert.NAME, tripEntry.getName());
+            intent.putExtra(ContactsContract.Intents.Insert.PHONE, tripEntry.getPhone());
+
+            context.startActivity(intent);
+        });
+
+        alertDialogBuilder.setNegativeButton("NO", (dialog, which) -> dialog.dismiss());
+
+        AlertDialog alert = alertDialogBuilder.create();
+        alert.show();
     }
 
     private void deleteEntry(View view, int position)
@@ -132,12 +187,9 @@ public class HomeActivityTEA extends TripEntryAdapter
 
             TripEntry tripEntry = list.get(position);
 
-            DatabaseReference entryDatabaseReference = BaseActivity.getEntryDatabaseReference();
-            DatabaseReference userDatabaseReference = BaseActivity.getUserDatabaseReference();
+            Task<Void> task1 = Globals.entryDatabaseReference.child(tripEntry.getEntry_id()).removeValue();
 
-            Task<Void> task1 = entryDatabaseReference.child(tripEntry.getEntry_id()).removeValue();
-
-            userDatabaseReference.child("userTripEntries").addListenerForSingleValueEvent(new ValueEventListener()
+            Globals.userDatabaseReference.child("userTripEntries").addListenerForSingleValueEvent(new ValueEventListener()
             {
                 @Override
                 public void onDataChange(DataSnapshot dataSnapshot)
@@ -167,7 +219,7 @@ public class HomeActivityTEA extends TripEntryAdapter
                     i[0]++;
                 }
 
-                Task<Void> task3 = userDatabaseReference.child("userTripEntries").child(tripEntry.getEntry_id()).removeValue();
+                Task<Void> task3 = Globals.userDatabaseReference.child("userTripEntries").child(tripEntry.getEntry_id()).removeValue();
 
                 task3.addOnSuccessListener(aVoid1 ->
                 {
@@ -226,8 +278,7 @@ public class HomeActivityTEA extends TripEntryAdapter
 
                 tripEntryUser[0] = snapshot.getValue(User.class);
 
-                DatabaseReference userDatabaseReference = FirebaseDatabase.getInstance().getReference("users");
-                DatabaseReference notificationDatabaseReference = BaseActivity.getNotificationDatabaseReference();
+                DatabaseReference userDatabaseReference = FirebaseDatabase.getInstance().getReference(Globals.UNI + "users");
 
                 HashMap<String, TripEntry> requestSent = user.getRequestSent();
                 HashMap<String, ArrayList<String>> requestsReceived = tripEntryUser[0].getRequestsReceived();
@@ -252,7 +303,7 @@ public class HomeActivityTEA extends TripEntryAdapter
                     notificationObject.put("from", user.getUserId());
                     notificationObject.put("type", "requestCreated");
 
-                    Task<Void> task3 = notificationDatabaseReference.child(tripEntryUser[0].getUserId()).push().setValue(notificationObject);
+                    Task<Void> task3 = Globals.notificationDatabaseReference.child(tripEntryUser[0].getUserId()).push().setValue(notificationObject);
 
                     Task<Void> allTask = Tasks.whenAll(task1, task2, task3);
                     allTask.addOnSuccessListener(bVoid ->

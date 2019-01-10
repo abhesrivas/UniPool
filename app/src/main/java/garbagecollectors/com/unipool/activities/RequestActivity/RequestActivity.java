@@ -3,12 +3,12 @@ package garbagecollectors.com.unipool.activities.RequestActivity;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.support.annotation.NonNull;
 import android.support.design.widget.TabLayout;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentManager;
 import android.support.v4.app.FragmentPagerAdapter;
 import android.support.v4.view.ViewPager;
-import android.support.v7.app.ActionBar;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.View;
@@ -20,18 +20,18 @@ import com.google.android.gms.tasks.TaskCompletionSource;
 import com.google.android.gms.tasks.Tasks;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
-import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import garbagecollectors.com.unipool.Models.TripEntry;
 import garbagecollectors.com.unipool.R;
-import garbagecollectors.com.unipool.UtilityMethods;
 import garbagecollectors.com.unipool.activities.BaseActivity;
 import garbagecollectors.com.unipool.activities.LoginActivity;
+import garbagecollectors.com.unipool.application.Globals;
+import garbagecollectors.com.unipool.application.UtilityMethods;
+import garbagecollectors.com.unipool.models.TripEntry;
 
 public class RequestActivity extends BaseActivity
 {
@@ -40,14 +40,14 @@ public class RequestActivity extends BaseActivity
 
 	public static ProgressBar requestsProgressBar;
 
-	static DatabaseReference sentRequestsDatabaseReference;
-	static DatabaseReference receivedRequestsDatabaseReference;
-
 	static TaskCompletionSource<DataSnapshot> sentRequestsSource;
 	static TaskCompletionSource<DataSnapshot> receivedRequestsSource;
+	static TaskCompletionSource<DataSnapshot> pairUpSource;
 
 	static Task<DataSnapshot> sentRequestsDBTask;
 	static Task<DataSnapshot> receivedRequestsDBTask;
+	static Task<DataSnapshot> pairUpDBTask;
+
 	private int tabIndex;
 
 	@Override
@@ -58,18 +58,14 @@ public class RequestActivity extends BaseActivity
 			super.onCreate(savedInstanceState);
 			setContentView(R.layout.activity_request);
 
-			sentRequestsDatabaseReference = FirebaseDatabase.getInstance().getReference(
-					"users/" + finalCurrentUser.getUserId() + "/requestSent");
+			Globals.sentRequestsDatabaseReference = FirebaseDatabase.getInstance().getReference(
+					Globals.UNI + "users/" + finalCurrentUser.getUserId() + "/requestSent");
 
-			receivedRequestsDatabaseReference = FirebaseDatabase.getInstance().getReference(
-					"users/" + finalCurrentUser.getUserId() + "/requestsReceived");
+			Globals.receivedRequestsDatabaseReference = FirebaseDatabase.getInstance().getReference(
+					Globals.UNI + "users/" + finalCurrentUser.getUserId() + "/requestsReceived");
 
-			final ActionBar actionBar = getSupportActionBar();
-			if(actionBar != null)
-			{
-				actionBar.setHomeAsUpIndicator(R.drawable.ic_menu_white);
-				actionBar.setDisplayHomeAsUpEnabled(true);
-			}
+			Globals.userPairUpDatabaseReference = FirebaseDatabase.getInstance().getReference(
+					Globals.UNI + "users/" + finalCurrentUser.getUserId() + "/pairUps");
 
 			drawerLayout = findViewById(R.id.requests_layout);
 
@@ -107,6 +103,13 @@ public class RequestActivity extends BaseActivity
 	}
 
 	@Override
+	protected void onResume()
+	{
+		super.onResume();
+		refreshRequests(this);
+	}
+
+	@Override
 	public boolean onCreateOptionsMenu(Menu menu)
 	{
 		MenuInflater inflater = getMenuInflater();
@@ -120,11 +123,13 @@ public class RequestActivity extends BaseActivity
 
 		sentRequestsSource = new TaskCompletionSource<>();
 		receivedRequestsSource = new TaskCompletionSource<>();
+		pairUpSource = new TaskCompletionSource<>();
 
 		sentRequestsDBTask = sentRequestsSource.getTask();
 		receivedRequestsDBTask = receivedRequestsSource.getTask();
+		pairUpDBTask = pairUpSource.getTask();
 
-		sentRequestsDatabaseReference.addListenerForSingleValueEvent(new ValueEventListener()
+		Globals.sentRequestsDatabaseReference.addListenerForSingleValueEvent(new ValueEventListener()
 		{
 			@Override
 			public void onDataChange(DataSnapshot dataSnapshot)
@@ -139,7 +144,7 @@ public class RequestActivity extends BaseActivity
 			}
 		});
 
-		receivedRequestsDatabaseReference.addListenerForSingleValueEvent(new ValueEventListener()
+		Globals.receivedRequestsDatabaseReference.addListenerForSingleValueEvent(new ValueEventListener()
 		{
 			@Override
 			public void onDataChange(DataSnapshot dataSnapshot)
@@ -155,7 +160,23 @@ public class RequestActivity extends BaseActivity
 			}
 		});
 
-		Task<Void> allTask = Tasks.whenAll(sentRequestsDBTask, receivedRequestsDBTask);
+		Globals.userPairUpDatabaseReference.addListenerForSingleValueEvent(new ValueEventListener()
+		{
+			@Override
+			public void onDataChange(@NonNull DataSnapshot dataSnapshot)
+			{
+				pairUpSource.setResult(dataSnapshot);
+			}
+
+			@Override
+			public void onCancelled(@NonNull DatabaseError databaseError)
+			{
+				pairUpSource.setException(databaseError.toException());
+				Toast.makeText(context, "Network Issues!", Toast.LENGTH_SHORT).show();
+			}
+		});
+
+		Task<Void> allTask = Tasks.whenAll(sentRequestsDBTask, receivedRequestsDBTask, pairUpDBTask);
 		allTask.addOnSuccessListener((Void aVoid) ->
 		{
 			finalCurrentUser.getRequestSent().clear();
@@ -165,6 +186,7 @@ public class RequestActivity extends BaseActivity
 
 			DataSnapshot sentRequestsData = sentRequestsDBTask.getResult();
 			DataSnapshot receivedRequestsData = receivedRequestsDBTask.getResult();
+			DataSnapshot pairUpData = pairUpDBTask.getResult();
 
 			for (DataSnapshot ds : sentRequestsData.getChildren())
 				finalCurrentUser.getRequestSent().put(ds.getValue(TripEntry.class).getEntry_id(), ds.getValue(TripEntry.class));
@@ -179,10 +201,13 @@ public class RequestActivity extends BaseActivity
 				finalCurrentUser.getRequestsReceived().put(dataSnapshot.getKey(), userIdList);
 			}
 
-			Task task = UtilityMethods.populateReceivedRequestsList(ReceivedRequestsFragment.getReceivedRequestsList(), finalCurrentUser.getRequestsReceived(), tripEntryList);
+			Task chatListTask = UtilityMethods.populateChatMap(pairUpData);
 
-			task.addOnSuccessListener(o ->
-			{
+			Task receivedRequestsTask = UtilityMethods.populateReceivedRequestsList(ReceivedRequestsFragment.getReceivedRequestsList(), finalCurrentUser.getRequestsReceived(), tripEntryList);
+
+			Task<Void> twoTasks = Tasks.whenAll(chatListTask, receivedRequestsTask);
+			twoTasks.addOnSuccessListener(aVoid1 -> {
+
 				ReceivedRequestsFragment.refreshRecycler();
 				SentRequestsFragment.refreshRecycler();
 				ChatFragment.refreshRecycler();
@@ -190,7 +215,8 @@ public class RequestActivity extends BaseActivity
 				requestsProgressBar.setVisibility(View.INVISIBLE);
 			});
 
-			task.addOnFailureListener(e -> Toast.makeText(context, "Network Issues!", Toast.LENGTH_SHORT).show());
+			twoTasks.addOnFailureListener(e -> Toast.makeText(context, "Network Issues!", Toast.LENGTH_SHORT).show());
+
 		});
 
 		allTask.addOnFailureListener(e ->

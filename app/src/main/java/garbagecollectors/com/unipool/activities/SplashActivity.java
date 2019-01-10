@@ -1,9 +1,14 @@
 package garbagecollectors.com.unipool.activities;
 
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.content.Intent;
 import android.graphics.drawable.AnimationDrawable;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
+import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.widget.ImageView;
 import android.widget.Toast;
@@ -15,27 +20,26 @@ import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
-import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 
 import java.util.ArrayList;
 
-import garbagecollectors.com.unipool.Models.TripEntry;
-import garbagecollectors.com.unipool.Models.User;
 import garbagecollectors.com.unipool.R;
-import garbagecollectors.com.unipool.UtilityMethods;
+import garbagecollectors.com.unipool.application.ForceUpdateChecker;
+import garbagecollectors.com.unipool.application.Globals;
+import garbagecollectors.com.unipool.application.UtilityMethods;
+import garbagecollectors.com.unipool.models.TripEntry;
+import garbagecollectors.com.unipool.models.User;
 
-public class SplashActivity extends AppCompatActivity
+public class SplashActivity extends AppCompatActivity implements ForceUpdateChecker.OnUpdateNeededListener
 {
     private static ArrayList<TripEntry> tripEntryList = new ArrayList<>();
 
-    private static DatabaseReference userDatabaseReference;
-    private static DatabaseReference entryDatabaseReference = FirebaseDatabase.getInstance().getReference("entries");
-    private static DatabaseReference messageDatabaseReference;
-
     FirebaseAuth mAuth;
     static FirebaseUser currentUser;
+
+    private boolean canProceed = true;
 
     private TaskCompletionSource<Void> timerSource = new TaskCompletionSource<>();
     private Task<Void> timerTask = timerSource.getTask();
@@ -63,19 +67,27 @@ public class SplashActivity extends AppCompatActivity
 
         loadingAnimation.start();
 
+        //check if update required
+        ForceUpdateChecker.with(this).onUpdateNeeded(this).check();
+
         mAuth = FirebaseAuth.getInstance();
         currentUser = mAuth.getCurrentUser();
 
+        //For Oreo and above
+        createNotificationChannel();
+
+        UtilityMethods.fillGlobalVariables(getApplicationContext());
+
         BaseActivity.setCurrentUser(currentUser);
 
-        userDatabaseReference = FirebaseDatabase.getInstance().getReference("users/" + currentUser.getUid());
+        Globals.userDatabaseReference = FirebaseDatabase.getInstance().getReference(Globals.UNI + "users/" + currentUser.getUid());
 
-        messageDatabaseReference = FirebaseDatabase.getInstance().getReference("messages/" + currentUser.getUid());
+        Globals.messageDatabaseReference = FirebaseDatabase.getInstance().getReference(Globals.UNI + "messages/" + currentUser.getUid());
 
         Handler handler = new Handler();
-        handler.postDelayed(() -> timerSource.setResult(null), 12350);
+        handler.postDelayed(() -> timerSource.setResult(null), 12345);
 
-        userDatabaseReference.addListenerForSingleValueEvent(new ValueEventListener()
+        Globals.userDatabaseReference.addListenerForSingleValueEvent(new ValueEventListener()
         {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot)
@@ -91,7 +103,7 @@ public class SplashActivity extends AppCompatActivity
             }
         });
 
-        entryDatabaseReference.addListenerForSingleValueEvent(new ValueEventListener()
+        Globals.entryDatabaseReference.addListenerForSingleValueEvent(new ValueEventListener()
         {
             @Override
             public void onDataChange(DataSnapshot dataSnapshot)
@@ -118,15 +130,15 @@ public class SplashActivity extends AppCompatActivity
             for (DataSnapshot dataSnapshot : entryData.getChildren())
             {
                 TripEntry tripEntry = dataSnapshot.getValue(TripEntry.class);
-                UtilityMethods.updateTripList(tripEntryList, tripEntry);
+                UtilityMethods.updateTripList(tripEntryList, tripEntry, true);
             }
 
             if (!(LoginActivity.userNewOnDatabase))
                 BaseActivity.setFinalCurrentUser(userData.getValue(User.class));
 
-            Task chatListTask = UtilityMethods.populateChatMap(userData);
+            Task chatListTask = UtilityMethods.populateChatMap(userData.child("pairUps"));
 
-            messageDatabaseReference.addListenerForSingleValueEvent(new ValueEventListener()
+            Globals.messageDatabaseReference.addListenerForSingleValueEvent(new ValueEventListener()
             {
                 @Override
                 public void onDataChange(DataSnapshot dataSnapshot)
@@ -148,8 +160,11 @@ public class SplashActivity extends AppCompatActivity
 
             chatListTask.addOnCompleteListener(task1 ->
             {
-                finish();
-                startActivity(new Intent(getApplicationContext(), HomeActivity.class));
+                if(canProceed)
+                {
+                    finish();
+                    startActivity(new Intent(getApplicationContext(), HomeActivity.class));
+                }
             });
         });
 
@@ -169,6 +184,38 @@ public class SplashActivity extends AppCompatActivity
     public static ArrayList<TripEntry> getTripEntryList()
     {
         return tripEntryList;
+    }
+
+    @Override
+    public void onUpdateNeeded(String updateUrl)
+    {
+        canProceed = false;  //don't go beyond splash
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("New version available")
+                .setMessage("The latest version fixes the problem of phones catching fire randomly, please update")
+                .setPositiveButton("Update",
+                        (dialog1, which) -> redirectStore(updateUrl)).setNegativeButton("No, thanks",
+                        (dialog12, which) -> finish()).create();
+        dialog.show();
+    }
+    private void redirectStore(String updateUrl) {
+        final Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(updateUrl));
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(intent);
+    }
+
+    private void createNotificationChannel() {
+        // Create the NotificationChannel, but only on API 26+ because
+        // the NotificationChannel class is new and not in the support library
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            int importance = NotificationManager.IMPORTANCE_DEFAULT;
+            NotificationChannel channel = new NotificationChannel(Globals.CHANNEL_ID, "UniPool Channel", importance);
+            channel.setDescription("The default notification channel for UniPool");
+            // Register the channel with the system; you can't change the importance
+            // or other notification behaviors after this
+            NotificationManager notificationManager = getSystemService(NotificationManager.class);
+            notificationManager.createNotificationChannel(channel);
+        }
     }
 
 }

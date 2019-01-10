@@ -1,13 +1,10 @@
-package garbagecollectors.com.unipool.Models;
-
-import java.text.ParseException;
-import java.util.HashMap;
+package garbagecollectors.com.unipool.models;
 
 public class TripEntry
 {
     private String entry_id;
 
-    private String user_id;     //Data type could be changed to long
+    private String user_id;
 
     private String name;
 
@@ -17,7 +14,14 @@ public class TripEntry
 
     private String message;
 
-    public TripEntry(String name, String entry_id, String user_id, String time, String date, GenLocation source, GenLocation destination, HashMap<String, Float> lambdaMap, String message) throws ParseException
+    private String phone;
+
+    private String email;
+
+    private boolean notFromApp;
+
+    public TripEntry(String name, String entry_id, String user_id, String time, String date,
+                     GenLocation source, GenLocation destination, String message, String phone, String email, boolean notFromApp)
     {
         this.entry_id = entry_id;
         this.user_id = user_id;
@@ -27,6 +31,9 @@ public class TripEntry
         this.destination = destination;
         this.name = name;
         this.message = message;
+        this.phone = phone;
+        this.email = email;
+        this.notFromApp = notFromApp;
     }
 
     public TripEntry(TripEntry tripEntry)   //copyConstructor
@@ -38,6 +45,8 @@ public class TripEntry
         this.source = tripEntry.getSource();
         this.destination = tripEntry.getDestination();
         this.name = tripEntry.getName();
+        this.phone = tripEntry.getPhone();
+        this.notFromApp = tripEntry.isNotFromApp();
     }
 
     public TripEntry()
@@ -106,5 +115,35 @@ public class TripEntry
     public void setMessage(String message)
     {
         this.message = message;
+    }
+
+    public String getPhone()
+    {
+        return phone;
+    }
+
+    public void setPhone(String phone)
+    {
+        this.phone = phone;
+    }
+
+    public boolean isNotFromApp()
+    {
+        return notFromApp;
+    }
+
+    public void setNotFromApp(boolean notFromApp)
+    {
+        this.notFromApp = notFromApp;
+    }
+
+    public String getEmail()
+    {
+        return email;
+    }
+
+    public void setEmail(String email)
+    {
+        this.email = email;
     }
 }
